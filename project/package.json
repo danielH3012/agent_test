@@ -1,0 +1,25 @@
+{
+  "name": "mcp-api-spec-server",
+  "version": "1.0.0",
+  "description": "MCP server untuk mengambil API spec dari PostgreSQL",
+  "main": "dist/index.js",
+  "allowScripts": true,
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.6.0",
+    "dotenv": "^16.3.1",
+    "pg": "^8.11.3",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/pg": "^8.10.9",
+    "typescript": "^5.3.3",
+    "ts-node": "^10.9.2"
+  },
+  "allowScripts": true
+}

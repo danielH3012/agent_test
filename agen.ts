@@ -83,8 +83,14 @@ async function runOrchestrator(userPrompt: string, cwd: string): Promise<string>
           "Jika task butuh optimasi performa, gunakan subagent code-optimizer. " +
           "Jika task butuh dokumentasi kode, gunakan subagent code-documenter." +
           "Berikan hasil akhir berupa ringkasan perubahan yang dilakukan.",
+        mcpServers: {
+          filesystem: {
+            command: "npx",
+            args: ["-y", "@modelcontextprotocol/server-filesystem", "C:/Users/user/OneDrive/Documents/proyek_DH/QTERA/agent_test/project"]
+            },
+        },
         agents: subagents,
-        allowedTools: ["Task"],
+        allowedTools: ["Task", "mcp__filesystem__*"],
         cwd: cwd,
         permissionMode: "bypassPermissions",
       },
@@ -114,7 +120,7 @@ async function main() {
 
   const output = await runOrchestrator(
     prompt,
-    "C:/Users/user/OneDrive/Documents/proyek_DH/QTERA/agent_test/tester/project"
+    "C:/Users/user/OneDrive/Documents/proyek_DH/QTERA/agent_test/tester"
   );
   console.log(output);
   rl.close();
