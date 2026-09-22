@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Environment variables — contains your OpenRouter API key
+.env
+.env.local
+.env.*.local
+
+# Build output, in case you add a compile step later
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Windows OS junk
+Thumbs.db
+desktop.ini
