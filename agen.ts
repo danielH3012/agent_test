@@ -89,12 +89,11 @@ async function runOrchestrator(userPrompt: string, cwd: string): Promise<string>
           filesystem: {
             command: "npx",
             args: ["-y", "@modelcontextprotocol/server-filesystem", "C:/Users/user/OneDrive/Documents/proyek_DH/QTERA/agent_test/project"]
-            },
+          },
         },
         agents: subagents,
         allowedTools: [
           "Task",
-          "Read", "Write", "Edit", "Grep", "Glob", "Bash",
           "mcp__filesystem__*"
         ],
         cwd: cwd,
@@ -135,9 +134,9 @@ async function runOrchestrator(userPrompt: string, cwd: string): Promise<string>
 }
 
 async function main() {
- const rl = readline.createInterface({ 
-    input: process.stdin, 
-    output: process.stdout 
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
   });
   const prompt: string = await rl.question('masukan prompt: ');
 
