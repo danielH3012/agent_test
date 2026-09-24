@@ -8,6 +8,7 @@ export interface AgentNode {
   name: string;
   role: "parent" | "subagent";
   parentId?: string;
+  owner: "claude" | "opencode";
   status: "idle" | "running" | "completed" | "failed";
   task: string;
   currentTool?: string;
@@ -21,6 +22,17 @@ interface AppProps {
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+const KNOWN_SUBAGENTS = [
+  "software-agent",
+  "testing-agent",
+  "file-summarizer",
+  "code-fixer",
+  "code-reviewer",
+  "code-optimizer",
+  "code-documenter",
+  "mcp__filesystem",
+];
+
 export function App({ initialPrompt = "", isDemo = false }: AppProps) {
   const renderer = useRenderer();
 
@@ -30,14 +42,25 @@ export function App({ initialPrompt = "", isDemo = false }: AppProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [spinnerIndex, setSpinnerIndex] = useState(0);
 
+  // Dua parent: Claude Code & OpenCode
   const [agents, setAgents] = useState<AgentNode[]>([
     {
-      id: "parent",
-      name: "Parent Orchestrator",
+      id: "claude-parent",
+      name: "Claude Code",
       role: "parent",
+      owner: "claude",
       status: isDemo ? "running" : "idle",
       task: isDemo ? "Menjalankan demo multi-agent..." : "Menunggu instruksi...",
-      logs: ["Sistem siap. Silakan masukkan tugas untuk Orchestrator."],
+      logs: ["Sistem siap. Menunggu tugas dari Orchestrator."],
+    },
+    {
+      id: "opencode-parent",
+      name: "OpenCode",
+      role: "parent",
+      owner: "opencode",
+      status: isDemo ? "running" : "idle",
+      task: isDemo ? "Menjalankan demo multi-agent..." : "Menunggu instruksi...",
+      logs: ["Sistem siap. Menunggu tugas dari Orchestrator."],
     },
   ]);
 
@@ -63,7 +86,7 @@ export function App({ initialPrompt = "", isDemo = false }: AppProps) {
     }
   });
 
-  // Demo Simulation Flow (menampilkan hierarki Parent & Sub-Agents secara visual)
+  // ---------- Demo Simulation ----------
   useEffect(() => {
     if (!isDemo) return;
 
@@ -81,66 +104,110 @@ export function App({ initialPrompt = "", isDemo = false }: AppProps) {
         );
       };
 
-      const spawnSubAgent = (id: string, name: string, task: string) => {
+      const spawnSubAgent = (id: string, name: string, task: string, owner: "claude" | "opencode") => {
+        const parentId = owner === "claude" ? "claude-parent" : "opencode-parent";
         setAgents((prev) => {
-          const next = [
-            ...prev,
-            {
-              id,
-              name,
-              role: "subagent" as const,
-              parentId: "parent",
-              status: "running" as const,
-              task,
-              logs: [`[SPAWN] Mendeploy sub-agent '${name}' untuk task: ${task}`],
-            },
-          ];
-          setSelectedIndex(next.length - 1); // Auto-focus ke sub-agent baru
+          // Insert sub-agent right after its parent's last child (or after parent itself)
+          const parentIndex = prev.findIndex((a) => a.id === parentId);
+          let insertIndex = parentIndex + 1;
+          while (insertIndex < prev.length && prev[insertIndex].owner === owner && prev[insertIndex].role === "subagent") {
+            insertIndex++;
+          }
+          const newAgent: AgentNode = {
+            id,
+            name,
+            role: "subagent",
+            parentId,
+            owner,
+            status: "running",
+            task,
+            logs: [`[SPAWN] Mendeploy sub-agent '${name}' untuk task: ${task}`],
+          };
+          const next = [...prev.slice(0, insertIndex), newAgent, ...prev.slice(insertIndex)];
+          setSelectedIndex(next.findIndex((a) => a.id === id));
           return next;
         });
       };
 
-      addLog("parent", "[ORCHESTRATOR] Membaca instruksi user...");
+      // ---- CLAUDE DEMO ----
+      addLog("claude-parent", "[ORCHESTRATOR] Membaca instruksi user...");
+      addLog("opencode-parent", "[ORCHESTRATOR] Membaca instruksi user...");
       await new Promise((r) => setTimeout(r, 1100));
 
-      addLog("parent", "[THINK] Analisis kebutuhan: Memerlukan pembuatan modul kalkulator dan verifikasi unit test.");
+      addLog("claude-parent", "[THINK] Analisis kebutuhan: Memerlukan pembuatan modul kalkulator.");
+      addLog("opencode-parent", "[THINK] Analisis kebutuhan: Memerlukan testing kalkulator.");
       await new Promise((r) => setTimeout(r, 1000));
 
-      // 1. Spawn Sub-agent 1: software-agent
-      addLog("parent", "[STAGE 1/2] Mendeploy software-agent...");
-      spawnSubAgent("sub-1", "software-agent", "Membuat file kalkulator src/calculator.py");
+      // Claude: spawn software-agent
+      addLog("claude-parent", "[STAGE 1/2] Mendeploy software-agent...");
+      spawnSubAgent("claude-sub-1", "software-agent", "Membuat file kalkulator src/calculator.py", "claude");
       await new Promise((r) => setTimeout(r, 800));
 
-      setStatus("sub-1", "running", "Write('src/calculator.py')");
-      addLog("sub-1", "[TOOL USE] Write('src/calculator.py')");
-      await new Promise((r) => setTimeout(r, 1200));
+      setStatus("claude-sub-1", "running", "Write('src/calculator.py')");
+      addLog("claude-sub-1", "[TOOL USE] Write('src/calculator.py')");
+      await new Promise((r) => setTimeout(r, 600));
 
-      addLog("sub-1", "[TOOL RESULT] Berhasil membuat src/calculator.py dengan fungsi add, sub, mul, div.");
-      setStatus("sub-1", "completed", undefined);
-      addLog("parent", "[DONE] software-agent selesai dengan sukses.");
-      await new Promise((r) => setTimeout(r, 900));
+      // OpenCode: spawn software-agent simultaneously
+      addLog("opencode-parent", "[STAGE 1/2] Mendeploy software-agent...");
+      spawnSubAgent("opencode-sub-1", "software-agent", "Membuat file utils src/utils.py", "opencode");
+      await new Promise((r) => setTimeout(r, 600));
 
-      // 2. Spawn Sub-agent 2: testing-agent
-      addLog("parent", "[STAGE 2/2] Kode siap. Mendeploy testing-agent untuk uji coba...");
+      setStatus("opencode-sub-1", "running", "Write('src/utils.py')");
+      addLog("opencode-sub-1", "[TOOL USE] Write('src/utils.py')");
+      await new Promise((r) => setTimeout(r, 800));
+
+      // Claude: software-agent done
+      addLog("claude-sub-1", "[TOOL RESULT] Berhasil membuat src/calculator.py dengan fungsi add, sub, mul, div.");
+      setStatus("claude-sub-1", "completed", undefined);
+      addLog("claude-parent", "[DONE] software-agent selesai dengan sukses.");
+      await new Promise((r) => setTimeout(r, 600));
+
+      // OpenCode: software-agent done
+      addLog("opencode-sub-1", "[TOOL RESULT] Berhasil membuat src/utils.py.");
+      setStatus("opencode-sub-1", "completed", undefined);
+      addLog("opencode-parent", "[DONE] software-agent selesai dengan sukses.");
+      await new Promise((r) => setTimeout(r, 600));
+
+      // Claude: spawn testing-agent
+      addLog("claude-parent", "[STAGE 2/2] Kode siap. Mendeploy testing-agent...");
+      spawnSubAgent("claude-sub-2", "testing-agent", "Menjalankan pytest untuk calculator.py", "claude");
+      await new Promise((r) => setTimeout(r, 800));
+
+      setStatus("claude-sub-2", "running", "Bash('pytest tests/')");
+      addLog("claude-sub-2", "[TOOL USE] Bash('pytest tests/test_calculator.py')");
+      await new Promise((r) => setTimeout(r, 600));
+
+      // OpenCode: spawn testing-agent
+      addLog("opencode-parent", "[STAGE 2/2] Kode siap. Mendeploy testing-agent...");
+      spawnSubAgent("opencode-sub-2", "testing-agent", "Menjalankan pytest untuk utils.py", "opencode");
+      await new Promise((r) => setTimeout(r, 800));
+
+      setStatus("opencode-sub-2", "running", "Bash('pytest tests/')");
+      addLog("opencode-sub-2", "[TOOL USE] Bash('pytest tests/test_utils.py')");
       await new Promise((r) => setTimeout(r, 1000));
 
-      spawnSubAgent("sub-2", "testing-agent", "Menjalankan unit test pytest untuk calculator.py");
-      await new Promise((r) => setTimeout(r, 800));
+      // Claude: testing done
+      addLog("claude-sub-2", "[OUTPUT] =================== 4 passed in 0.04s ===================");
+      addLog("claude-sub-2", "[TOOL RESULT] Tests: 4 passed, 0 failed.");
+      setStatus("claude-sub-2", "completed", undefined);
+      addLog("claude-parent", "[DONE] testing-agent selesai dengan sukses.");
+      await new Promise((r) => setTimeout(r, 600));
 
-      setStatus("sub-2", "running", "Bash('pytest tests/test_calculator.py')");
-      addLog("sub-2", "[TOOL USE] Bash('pytest tests/test_calculator.py')");
-      await new Promise((r) => setTimeout(r, 1400));
+      // OpenCode: testing done
+      addLog("opencode-sub-2", "[OUTPUT] =================== 3 passed in 0.02s ===================");
+      addLog("opencode-sub-2", "[TOOL RESULT] Tests: 3 passed, 0 failed.");
+      setStatus("opencode-sub-2", "completed", undefined);
+      addLog("opencode-parent", "[DONE] testing-agent selesai dengan sukses.");
+      await new Promise((r) => setTimeout(r, 600));
 
-      addLog("sub-2", "[OUTPUT] =================== 4 passed in 0.04s ===================");
-      addLog("sub-2", "[TOOL RESULT] Tests: 4 passed, 0 failed. Semua logika kalkulator terverifikasi!");
-      setStatus("sub-2", "completed", undefined);
-      addLog("parent", "[DONE] testing-agent selesai dengan sukses.");
-      await new Promise((r) => setTimeout(r, 900));
+      // Both parents done
+      setSelectedIndex(0);
+      addLog("claude-parent", "[ORCHESTRATOR COMPLETE] Semua stage Claude Code berhasil!");
+      setStatus("claude-parent", "completed", undefined);
 
-      // 3. Parent Concludes
-      setSelectedIndex(0); // Kembalikan fokus ke Parent Orchestrator
-      addLog("parent", "[ORCHESTRATOR COMPLETE] Semua stage berhasil diselesaikan oleh sub-agent!");
-      setStatus("parent", "completed", undefined);
+      addLog("opencode-parent", "[ORCHESTRATOR COMPLETE] Semua stage OpenCode berhasil!");
+      setStatus("opencode-parent", "completed", undefined);
+
       setGlobalStatus("All Stages Completed Successfully (Demo)");
     };
 
@@ -151,21 +218,22 @@ export function App({ initialPrompt = "", isDemo = false }: AppProps) {
     return () => clearTimeout(timeoutId);
   }, [isDemo]);
 
-  // Eksekusi prompt dengan agen.ts via npx tsx
+  // ---------- Real execution via agen.ts ----------
   const handleStartPrompt = (submittedPrompt: string) => {
     if (!submittedPrompt.trim()) return;
     setIsStarted(true);
     setGlobalStatus("Running Orchestrator via agen.ts...");
 
+    // Activate both parents
     setAgents((prev) =>
       prev.map((a) =>
-        a.id === "parent"
+        a.role === "parent"
           ? {
-            ...a,
-            status: "running",
-            task: submittedPrompt,
-            logs: [...a.logs, `[PROMPT] ${submittedPrompt}`],
-          }
+              ...a,
+              status: "running",
+              task: submittedPrompt,
+              logs: [...a.logs, `[PROMPT] ${submittedPrompt}`],
+            }
           : a
       )
     );
@@ -179,83 +247,108 @@ export function App({ initialPrompt = "", isDemo = false }: AppProps) {
     child.stdin.write(`${submittedPrompt}\n`);
     child.stdin.end();
 
-    let activeSubId = "parent";
+    // Track active sub-agent per owner
+    let activeSubIds: Record<string, string> = {
+      claude: "claude-parent",
+      opencode: "opencode-parent",
+    };
     let stdoutBuffer = "";
-
-    const KNOWN_SUBAGENTS = [
-      "software-agent",
-      "testing-agent",
-      "file-summarizer",
-      "code-fixer",
-      "code-reviewer",
-      "code-optimizer",
-      "code-documenter",
-      "mcp__filesystem",
-    ];
 
     const processLine = (rawLine: string) => {
       const line = rawLine.trim();
       if (!line || line.startsWith("masukan prompt:")) return;
 
-      // 1. Deteksi pemanggilan Sub-agent (mendukung tool 'Agent', 'Task', atau property 'subagent_type')
+      // Determine owner from prefix
+      let owner: "claude" | "opencode" | null = null;
+      let cleanLine = line;
+
+      if (line.startsWith("[CLAUDE]")) {
+        owner = "claude";
+        cleanLine = line.slice("[CLAUDE]".length).trim();
+      } else if (line.startsWith("[OPENCODE]")) {
+        owner = "opencode";
+        cleanLine = line.slice("[OPENCODE]".length).trim();
+      }
+
+      // If no prefix detected, try to infer from content, default to logging to both
+      if (!owner) {
+        // Log untagged lines to both parents
+        setAgents((prev) =>
+          prev.map((a) =>
+            a.role === "parent"
+              ? { ...a, logs: [...a.logs, `[UNTAGGED] ${line}`] }
+              : a
+          )
+        );
+        return;
+      }
+
+      const parentId = owner === "claude" ? "claude-parent" : "opencode-parent";
+      const activeSubId = activeSubIds[owner];
+      const lowerClean = cleanLine.toLowerCase();
+
+      // 1. Detect sub-agent invocations (tool 'Agent', 'Task', or 'subagent_type')
       const isNewToolInvocation =
-        line.includes("Tool dipanggil: Agent") ||
-        line.includes("Tool dipanggil: Task");
+        lowerClean.includes("tool dipanggil: agent") ||
+        lowerClean.includes("tool dipanggil: task");
 
-      const hasSubagentProperty = line.includes('"subagent_type":');
+      const hasSubagentProperty = cleanLine.includes('"subagent_type":') || cleanLine.includes('"subagent":');
 
-      // Jika baris ini merupakan potongan JSON lanjutan yang membawa subagent_type untuk agent yang baru saja di-spawn
-      if (hasSubagentProperty && !isNewToolInvocation && activeSubId !== "parent") {
-        const typeMatch = line.match(/["']subagent_type["']\s*:\s*["']([^"'\\]+)["']/i);
+      // If this line carries subagent_type for a recently spawned agent whose name is still generic
+      if (hasSubagentProperty && !isNewToolInvocation && activeSubId !== parentId) {
+        const typeMatch = cleanLine.match(/["'](?:subagent_type|subagent)["']\s*:\s*["']([^"'\\]+)["']/i);
         if (typeMatch) {
           const detectedName = typeMatch[1];
           setAgents((prev) =>
-            prev.map((a) =>
-              a.id === activeSubId ? { ...a, name: detectedName } : a
-            )
+            prev.map((a) => {
+              if (a.id === activeSubId && (a.name.startsWith("subagent-") || a.name === "subagent-worker")) {
+                return { ...a, name: detectedName };
+              }
+              return a;
+            })
           );
         }
         return;
       }
 
-      const isSubagentCall = isNewToolInvocation || (hasSubagentProperty && activeSubId === "parent");
+      const isSubagentCall = isNewToolInvocation || (hasSubagentProperty && activeSubId === parentId);
 
       if (isSubagentCall) {
         let subName = "";
         let subTask = "";
 
-        // Coba parsing via JSON
+        // Try parsing via JSON
         try {
-          const jsonIndex = line.indexOf("{");
+          const jsonIndex = cleanLine.indexOf("{");
           if (jsonIndex !== -1) {
-            const jsonPart = line.slice(jsonIndex);
+            const jsonPart = cleanLine.slice(jsonIndex);
             const input = JSON.parse(jsonPart);
             subName = input.subagent_type || input.subagent || input.agent || "";
             subTask = input.description || input.prompt || "";
           }
         } catch {
-          // Fallback parsing regex jika JSON terpotong di stream chunk
+          // Fallback
         }
 
-        // Ekstraksi subagent_type via regex
+        // Extract subagent_type via regex
         if (!subName) {
-          const typeMatch = line.match(/["']subagent_type["']\s*:\s*["']([^"'\\]+)["']/i);
+          const typeMatch = cleanLine.match(/["'](?:subagent_type|subagent|agent)["']\s*:\s*["']([^"'\\]+)["']/i);
           if (typeMatch) subName = typeMatch[1];
         }
 
-        // Ekstraksi dari daftar known subagents
+        // Known subagents
         if (!subName) {
           for (const known of KNOWN_SUBAGENTS) {
-            if (line.includes(known)) {
+            if (cleanLine.includes(known)) {
               subName = known;
               break;
             }
           }
         }
 
-        // Ekstraksi deskripsi task via regex
+        // Task description
         if (!subTask) {
-          const descMatch = line.match(/["']description["']\s*:\s*["']([^"'\\]+)["']/i);
+          const descMatch = cleanLine.match(/["']description["']\s*:\s*["']([^"'\\]+)["']/i);
           if (descMatch) subTask = descMatch[1];
           else subTask = "Menjalankan sub-task delegasi";
         }
@@ -264,39 +357,46 @@ export function App({ initialPrompt = "", isDemo = false }: AppProps) {
           subName = subTask ? `subagent-${subTask.slice(0, 15).replace(/\s+/g, "_")}` : "subagent-worker";
         }
 
-        const subId = `sub-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-        activeSubId = subId;
+        const subId = `${owner}-sub-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+        activeSubIds[owner] = subId;
 
         setAgents((prev) => {
-          // Tandai sub-agent sebelumnya yang masih running sebagai completed
+          // Mark previous running sub-agents of this owner as completed
           const updated = prev.map((a) =>
-            a.role === "subagent" && a.status === "running"
+            a.owner === owner && a.role === "subagent" && a.status === "running"
               ? { ...a, status: "completed" as const, currentTool: undefined }
               : a
           );
-          const next = [
-            ...updated,
-            {
-              id: subId,
-              name: subName,
-              role: "subagent" as const,
-              parentId: "parent",
-              status: "running" as const,
-              task: subTask,
-              logs: [
-                `[SPAWN] Mendeploy sub-agent '${subName}'`,
-                `[TARGET] ${subTask}`,
-              ],
-            },
-          ];
-          setSelectedIndex(next.length - 1); // Auto-focus ke sub-agent baru
+
+          // Find insertion point: after the last sub-agent of this owner (or after parent)
+          const parentIdx = updated.findIndex((a) => a.id === parentId);
+          let insertIdx = parentIdx + 1;
+          while (insertIdx < updated.length && updated[insertIdx].owner === owner && updated[insertIdx].role === "subagent") {
+            insertIdx++;
+          }
+
+          const newAgent: AgentNode = {
+            id: subId,
+            name: subName,
+            role: "subagent",
+            parentId,
+            owner,
+            status: "running",
+            task: subTask,
+            logs: [
+              `[SPAWN] Mendeploy sub-agent '${subName}'`,
+              `[TARGET] ${subTask}`,
+            ],
+          };
+          const next = [...updated.slice(0, insertIdx), newAgent, ...updated.slice(insertIdx)];
+          setSelectedIndex(next.findIndex((a) => a.id === subId));
           return next;
         });
 
-        // Mirror info spawn ke log parent orchestrator
+        // Mirror info to parent log
         setAgents((prev) =>
           prev.map((a) =>
-            a.id === "parent"
+            a.id === parentId
               ? {
                   ...a,
                   logs: [...a.logs, `[ORCHESTRATOR] Mendeploy '${subName}' -> ${subTask}`],
@@ -307,25 +407,46 @@ export function App({ initialPrompt = "", isDemo = false }: AppProps) {
         return;
       }
 
-      // 2. Deteksi tool yang sedang dipanggil oleh agen aktif (Bash, Write, Read, dll.)
-      if (line.includes("Tool dipanggil:")) {
-        const toolMatch = line.match(/Tool dipanggil:\s*([a-zA-Z0-9_]+)/);
+      // 2. Detect tool calls by active agent
+      if (cleanLine.includes("Tool dipanggil:")) {
+        const toolMatch = cleanLine.match(/Tool dipanggil:\s*([a-zA-Z0-9_]+)/i);
         const toolName = toolMatch ? toolMatch[1] : undefined;
-        if (toolName && toolName !== "Agent" && toolName !== "Task") {
+        if (toolName && toolName.toLowerCase() !== "agent" && toolName.toLowerCase() !== "task") {
           setAgents((prev) =>
             prev.map((a) => (a.id === activeSubId ? { ...a, currentTool: toolName } : a))
           );
         }
       }
 
-      // 3. Simpan log ke agent aktif dan mirror ke parent jika aktif adalah sub-agent
+      // 2b. Detect tool completion (from OpenCode SSE events)
+      if (lowerClean.includes("tool selesai:")) {
+        const isTaskDone = lowerClean.includes("tool selesai: task");
+        if (isTaskDone) {
+          // Tandai subagent aktif sebagai selesai
+          setAgents((prev) =>
+            prev.map((a) =>
+              a.id === activeSubId
+                ? { ...a, status: "completed" as const, currentTool: undefined }
+                : a
+            )
+          );
+          // Kembalikan target log ke parent orchestrator
+          activeSubIds[owner] = parentId;
+        } else {
+          setAgents((prev) =>
+            prev.map((a) => (a.id === activeSubId ? { ...a, currentTool: undefined } : a))
+          );
+        }
+      }
+
+      // 3. Log to active agent and mirror to parent
       setAgents((prev) =>
         prev.map((a) => {
           if (a.id === activeSubId) {
-            return { ...a, logs: [...a.logs, line] };
+            return { ...a, logs: [...a.logs, cleanLine] };
           }
-          if (activeSubId !== "parent" && a.id === "parent") {
-            return { ...a, logs: [...a.logs, `[${activeSubId.slice(0, 8)}] ${line}`] };
+          if (activeSubId !== parentId && a.id === parentId) {
+            return { ...a, logs: [...a.logs, `[${activeSubId.slice(0, 12)}] ${cleanLine}`] };
           }
           return a;
         })
@@ -346,7 +467,7 @@ export function App({ initialPrompt = "", isDemo = false }: AppProps) {
       if (errText) {
         setAgents((prev) =>
           prev.map((a) =>
-            a.id === "parent" ? { ...a, logs: [...a.logs, `[STDERR] ${errText}`] } : a
+            a.role === "parent" ? { ...a, logs: [...a.logs, `[STDERR] ${errText}`] } : a
           )
         );
       }
@@ -364,12 +485,16 @@ export function App({ initialPrompt = "", isDemo = false }: AppProps) {
           currentTool: undefined,
         }))
       );
-      setGlobalStatus(code === 0 ? "Selesai (Semua sub-agent selesai)" : `Keluar dengan kode ${code}`);
+      setGlobalStatus(code === 0 ? "Selesai (Semua agen selesai)" : `Keluar dengan kode ${code}`);
     });
   };
 
   const selectedAgent = agents[selectedIndex] || agents[0];
   const currentSpinner = SPINNER_FRAMES[spinnerIndex];
+
+  // Helper: get agents grouped by owner
+  const claudeAgents = agents.filter((a) => a.owner === "claude");
+  const opencodeAgents = agents.filter((a) => a.owner === "opencode");
 
   // Helper render status icon
   const renderStatusIcon = (status: AgentNode["status"]) => {
@@ -385,6 +510,67 @@ export function App({ initialPrompt = "", isDemo = false }: AppProps) {
     }
   };
 
+  // Render an agent tree section
+  const renderAgentTree = (ownerAgents: AgentNode[], headerLabel: string, headerColor: string) => {
+    const parent = ownerAgents.find((a) => a.role === "parent");
+    const subs = ownerAgents.filter((a) => a.role === "subagent");
+    const globalIdx = (id: string) => agents.findIndex((a) => a.id === id);
+
+    return (
+      <box flexDirection="column" style={{ marginBottom: 1 }}>
+        {/* Section header */}
+        <box style={{ marginBottom: 0 }}>
+          <text>
+            <strong fg={headerColor}>{headerLabel}</strong>
+          </text>
+        </box>
+
+        {/* Parent */}
+        {parent && (() => {
+          const idx = globalIdx(parent.id);
+          const isSelected = idx === selectedIndex;
+          return (
+            <box key={`agent-${parent.id}`}>
+              <text>
+                <span fg={isSelected ? "cyan" : "gray"}>
+                  {isSelected ? "❯ " : "  "}
+                </span>
+                <span fg="gray">▼ </span>
+                {renderStatusIcon(parent.status)}
+                <span fg={isSelected ? "cyan" : "white"}>
+                  {parent.name}
+                </span>
+              </text>
+            </box>
+          );
+        })()}
+
+        {/* Sub-agents */}
+        {subs.map((agent, i) => {
+          const idx = globalIdx(agent.id);
+          const isSelected = idx === selectedIndex;
+          const isLast = i === subs.length - 1;
+          const treePrefix = isLast ? "  └─ " : "  ├─ ";
+
+          return (
+            <box key={`agent-${agent.id}`}>
+              <text>
+                <span fg={isSelected ? "cyan" : "gray"}>
+                  {isSelected ? "❯ " : "  "}
+                </span>
+                <span fg="gray">{treePrefix}</span>
+                {renderStatusIcon(agent.status)}
+                <span fg={isSelected ? "cyan" : "gray"}>
+                  {agent.name.length > 16 ? agent.name.slice(0, 14) + "…" : agent.name}
+                </span>
+              </text>
+            </box>
+          );
+        })}
+      </box>
+    );
+  };
+
   return (
     <box flexDirection="column" style={{ padding: 1, width: "100%" }}>
       {/* HEADER BAR */}
@@ -397,7 +583,7 @@ export function App({ initialPrompt = "", isDemo = false }: AppProps) {
       >
         <box flexDirection="row" justifyContent="space-between">
           <text>
-            <strong fg="cyan">🤖 AGENT ORCHESTRATOR & SUB-AGENTS MONITOR (OpenTUI)</strong>
+            <strong fg="cyan">🤖 DUAL-AGENT ORCHESTRATOR MONITOR (OpenTUI)</strong>
           </text>
           <text>
             <span fg="gray">Tekan [q] atau [ESC] untuk keluar</span>
@@ -441,14 +627,14 @@ export function App({ initialPrompt = "", isDemo = false }: AppProps) {
       )}
 
       {/* MAIN VIEW: DUAL PANE (HIERARKI KIRI, LOG KANAN) */}
-      <box flexDirection="row" style={{ height: 18 }}>
-        {/* PANEL KIRI: TREE HIERARKI AGEN */}
+      <box flexDirection="row" style={{ height: 22 }}>
+        {/* PANEL KIRI: DUAL TREE HIERARKI AGEN */}
         <box
           border
           borderStyle="single"
           borderColor="blue"
           flexDirection="column"
-          style={{ width: 36, paddingLeft: 1, paddingRight: 1, marginRight: 1 }}
+          style={{ width: 38, paddingLeft: 1, paddingRight: 1, marginRight: 1 }}
         >
           <box style={{ marginBottom: 1 }}>
             <text>
@@ -456,28 +642,18 @@ export function App({ initialPrompt = "", isDemo = false }: AppProps) {
             </text>
           </box>
 
-          {agents.map((agent, index) => {
-            const isSelected = index === selectedIndex;
-            const isParent = agent.role === "parent";
-            const subAgents = agents.filter((a) => a.role === "subagent");
-            const isLastSubAgent = !isParent && subAgents[subAgents.length - 1]?.id === agent.id;
-            const treePrefix = isParent ? "▼ " : isLastSubAgent ? "  └─ " : "  ├─ ";
+          {/* Claude Code tree */}
+          {renderAgentTree(claudeAgents, "🟣 Claude Code", "magenta")}
 
-            return (
-              <box key={`agent-${agent.id}-${index}`} style={{ marginBottom: 0 }}>
-                <text>
-                  <span fg={isSelected ? "cyan" : "gray"}>
-                    {isSelected ? "❯ " : "  "}
-                  </span>
-                  <span fg="gray">{treePrefix}</span>
-                  {renderStatusIcon(agent.status)}
-                  <span fg={isSelected ? "cyan" : isParent ? "white" : "gray"}>
-                    {agent.name.length > 18 ? agent.name.slice(0, 16) + "…" : agent.name}
-                  </span>
-                </text>
-              </box>
-            );
-          })}
+          {/* Separator */}
+          <box style={{ marginBottom: 1 }}>
+            <text>
+              <span fg="gray">──────────────────────────</span>
+            </text>
+          </box>
+
+          {/* OpenCode tree */}
+          {renderAgentTree(opencodeAgents, "🟢 OpenCode", "green")}
         </box>
 
         {/* PANEL KANAN: INSPEKSI & LOG DETAIL */}
@@ -494,6 +670,9 @@ export function App({ initialPrompt = "", isDemo = false }: AppProps) {
               <strong fg="green">
                 🔍 {selectedAgent?.role === "parent" ? "ORCHESTRATOR" : "SUB-AGENT"}: {selectedAgent?.name}
               </strong>
+              <span fg={selectedAgent?.owner === "claude" ? "magenta" : "green"}>
+                {" "}({selectedAgent?.owner === "claude" ? "Claude Code" : "OpenCode"})
+              </span>
             </text>
             <text>
               <span fg={selectedAgent?.status === "running" ? "yellow" : "gray"}>
@@ -516,19 +695,20 @@ export function App({ initialPrompt = "", isDemo = false }: AppProps) {
 
           {/* Log Stream Terisolasi */}
           <box flexDirection="column" style={{ flexGrow: 1 }}>
-            {selectedAgent?.logs.slice(-12).map((log, idx) => {
+            {selectedAgent?.logs.slice(-14).map((log, idx) => {
               let cleanLog = log.replace(/\r/g, "");
               if (cleanLog.length > 90) {
                 cleanLog = cleanLog.slice(0, 87) + "...";
               }
               let fgColor = "white";
               if (cleanLog.startsWith("[TOOL USE]") || cleanLog.includes("Tool dipanggil")) fgColor = "yellow";
-              else if (cleanLog.startsWith("[TOOL RESULT]") || cleanLog.startsWith("[OUTPUT]")) fgColor = "cyan";
+              else if (cleanLog.startsWith("[TOOL RESULT]") || cleanLog.startsWith("[OUTPUT]") || cleanLog.includes("Tool selesai")) fgColor = "cyan";
               else if (cleanLog.startsWith("[SPAWN]") || cleanLog.startsWith("[STAGE") || cleanLog.startsWith("[TARGET]")) fgColor = "magenta";
               else if (cleanLog.startsWith("[ORCHESTRATOR") || cleanLog.startsWith("[DONE]")) fgColor = "green";
-              else if (cleanLog.startsWith("[STDERR]") || cleanLog.startsWith("[ERROR]")) fgColor = "red";
+              else if (cleanLog.startsWith("[STDERR]") || cleanLog.startsWith("[ERROR]") || cleanLog.includes("Tool error")) fgColor = "red";
               else if (cleanLog.startsWith("[PROMPT]")) fgColor = "blue";
               else if (cleanLog.startsWith("[THINK]")) fgColor = "magenta";
+              else if (cleanLog.startsWith("[UNTAGGED]")) fgColor = "gray";
 
               return (
                 <text key={`log-${selectedAgent.id}-${idx}`}>
@@ -558,8 +738,9 @@ export function App({ initialPrompt = "", isDemo = false }: AppProps) {
         </text>
         <text>
           <span fg="gray">
-            Agen: {selectedIndex + 1}/{agents.length} (
-            {agents.filter((a) => a.role === "subagent").length} Sub-agents)
+            Agen: {selectedIndex + 1}/{agents.length} |
+            Claude: {claudeAgents.filter((a) => a.role === "subagent").length} sub |
+            OpenCode: {opencodeAgents.filter((a) => a.role === "subagent").length} sub
           </span>
         </text>
       </box>

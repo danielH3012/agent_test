@@ -21,3 +21,10 @@ npm-debug.log*
 # Windows OS junk
 Thumbs.db
 desktop.ini
+
+bun.lock
+
+# Agent working directories
+claude/
+opencode/
+runs/
